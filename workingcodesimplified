@@ -1,0 +1,51 @@
+# load libraries
+library(ggplot2)
+
+# set working directory
+setwd("C:/Users/Administrator/Downloads/CMB_Project/CMB_copy")
+
+# load csvs
+preds <- read.csv("./Results/testdata_with_predictions/preds.csv", row.names = 1, check.names = FALSE)
+ki02  <- read.csv("./Data/KI_02_gene_expression_TPM_Ln_Norm.csv", row.names = 1, check.names = FALSE)
+
+# clean patient ids
+rownames(preds) <- sub("-1$", "", trimws(rownames(preds)))
+rownames(ki02)  <- sub("-2$", "", trimws(rownames(ki02)))
+
+# add patient id column
+preds$PatientID <- rownames(preds)
+ki02$PatientID  <- rownames(ki02)
+
+# merge on patient id
+merged <- merge(preds, ki02, by = "PatientID")
+
+# set output folder
+out_dir <- "./Results/Correlation_Plots"
+dir.create(out_dir, showWarnings = FALSE)
+
+# get shared genes
+pred_genes   <- sub("_average_predicted$", "", grep("_average_predicted$", colnames(preds), value = TRUE))
+shared_genes <- pred_genes[pred_genes %in% colnames(ki02)]
+
+# plot for each shared gene
+for (gene in shared_genes) {
+  pred_col <- paste0(gene, "_average_predicted")
+  gt_col   <- gene
+  df       <- merged[, c(pred_col, gt_col)]
+  
+  if (nrow(df) >= 3) {
+    cor_test <- cor.test(df[[1]], df[[2]], method = "spearman")
+    
+    p <- ggplot(df, aes(x = .data[[pred_col]], y = .data[[gt_col]])) +
+      geom_point(color = "#2c3e50") +
+      labs(title = gene, x = "prediction", y = "ground truth") +
+      annotate("text",
+               x = min(df[[1]]), y = max(df[[2]]),
+               label = sprintf("spearman r = %.3f\np = %.3g", cor_test$estimate, cor_test$p.value),
+               hjust = 0, vjust = 1, size = 4.5, fontface = "bold") +
+      theme_minimal()
+    
+    ggsave(filename = paste0(out_dir, "/", gene, "_correlation_plot.png"),
+           plot = p, width = 5, height = 4, dpi = 300)
+  }
+}
