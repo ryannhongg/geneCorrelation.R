@@ -1,0 +1,66 @@
+# load necessary library
+library(ggplot2)
+library(ggpubr)
+library(stringr)
+
+
+# set working directory
+setwd("C:/Users/Administrator/Downloads/CMB_Project/CMB_copy")
+
+# load prediction and ground truth CSVs
+preds <- read.csv("./Results/testdata_with_predictions/preds.csv", row.names = 1, check.names = FALSE)
+ki02 <- read.csv("./Data/KI_02_gene_expression_TPM_Ln_Norm.csv", row.names = 1, check.names = FALSE)
+
+# clean patient IDs syntax
+rownames(preds) <- sub("-1$", "", trimws(rownames(preds)))
+rownames(ki02)  <- sub("-2$", "", trimws(rownames(ki02)))
+
+# add patientid
+preds$PatientID <- rownames(preds)
+ki02$PatientID <- rownames(ki02)
+
+# merge datasets 
+merged <- merge(preds, ki02, by = "PatientID")
+
+# set output directory for plots
+out_dir <- "./Results/Correlation_Plots"
+dir.create(out_dir, showWarnings = FALSE)
+
+# get list of shared genes (predicted column ends with "_average_predicted")
+pred_genes <- sub("_average_predicted$", "", grep("_average_predicted$", colnames(preds), value = TRUE))
+shared_genes <- pred_genes[pred_genes %in% colnames(ki02)]
+
+# loop over shared genes and create scatter plots
+for (gene in shared_genes) {
+  #must use the correct average syntax
+  pred_col <- paste0(gene, "_average_predicted")
+  gt_col <- gene
+  
+  # *create data frame with prediction and ground truth columns
+  df <- merged[, c(pred_col, gt_col)]
+  
+  #testing 0s
+  
+  df <- df[df$Prediction != 0 & df$GroundTruth != 0, ]
+  colnames(df) <- c("Prediction", "GroundTruth")
+  
+  # check if there are enough data points
+  if (nrow(df) >= 3) {
+    # create scatter plot using preferred formatting
+    p <- ggplot(df, aes(x = .data[[pred_col]], y = .data[[gt_col]])) +
+      geom_point() +
+      stat_smooth(method = 'lm', formula = y ~ x) +
+      xlab("Prediction") +
+      ylab("Ground Truth") +
+      stat_cor(method = 'spearman')  # auto adds r and p
+     
+    # save plot
+    ggsave(filename = paste0(out_dir, "/", gene, "_correlation_plot.pdf"),
+           plot = p, width = 5, height = 4, dpi = 300)
+    
+    
+  } else {
+    # skip genes with fewer than 3 data points
+    cat("Skipping", gene, "- not enough data points\n")
+  }
+}
